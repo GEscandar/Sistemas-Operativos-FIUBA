@@ -1,0 +1,6 @@
+fisopfs.c
+fisopfs.h
+bitmap.c
+bitmap.h
+inode.c
+inode.h
