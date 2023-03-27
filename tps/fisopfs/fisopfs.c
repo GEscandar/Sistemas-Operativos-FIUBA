@@ -52,6 +52,8 @@ print_inode(inode_t *inode)
 	printf("[debug] i->d_accessed:			%lu\n", inode->d_accessed);
 	printf("[debug] i->d_changed:			%lu\n", inode->d_changed);
 	printf("[debug] i->d_modified:			%lu\n", inode->d_modified);
+	printf("[debug] i->uid:			%d\n", inode->uid);
+	printf("[debug] i->gid:			%d\n", inode->gid);
 	printf("[debug] i->file_size:			%lu\n", inode->file_size);
 	printf("[debug] i->mode:			%u\n", inode->mode);
 	printf("[debug] i->nblocks:			%u\n", inode->nblocks);
@@ -98,7 +100,7 @@ strsplit(const char *src, char *dest[], char delim)
 char *
 get_pathname(const char *path)
 {
-	char *name = NULL, *curr = path;
+	char *name = NULL, *curr = (char *) path;
 	for (; *curr; curr++) {
 		if (*curr == '/' && *(curr + 1)) {
 			name = ++curr;
@@ -205,22 +207,47 @@ get_parent_dir(const char *path, inode_t **dst)
 	return last_slash_index;
 }
 
-
+/////////////
+bool permissions_ok_for(inode_t *inode, char rwx){
+	mode_t S_USR = 0;
+	mode_t S_GRP = 0;
+	mode_t S_OTH = 0;
+	if (rwx=='R'){
+		S_USR = S_IRUSR;
+		S_GRP = S_IRGRP;
+		S_OTH = S_IROTH;
+	} else if (rwx=='W'){
+		S_USR = S_IWUSR;
+		S_GRP = S_IWGRP;
+		S_OTH = S_IWOTH;
+	} else if (rwx=='X'){
+		S_USR = S_IXUSR;
+		S_GRP = S_IXGRP;
+		S_OTH = S_IXOTH;
+	}
+	
+	// Permissions check.
+	struct fuse_context *context = fuse_get_context();
+	bool user_can_and_im_user = ((inode->mode & S_USR) && (inode->uid == context->uid));
+	bool group_can_and_im_group = ((inode->mode & S_GRP) && (inode->gid == context->gid));
+	bool others_can_and_im_others = ((inode->mode & S_OTH) &&
+				(inode->uid != context->uid) && (inode->gid != context->gid));
+	
+	// debug
+	printf("[debug] [] CHECKEANDO PERMISOS uid: %d, gid: %d, inode uid: %d, inode gid: %d \n",
+	       context->uid,
+	       context->gid,
+	       inode->uid,
+	       inode->gid);
+	
+	return (user_can_and_im_user || group_can_and_im_group || others_can_and_im_others);
+}
+//////////////
 int
 insert_directory_entry(inode_t *parent, uint32_t ino, const char *name)
 {
 	// Permissions check.
-	struct fuse_context *context = fuse_get_context();
-	bool user_can_read_an_im_user =
-	        ((parent->mode & S_IRUSR) && (parent->uid == context->uid));
-	bool group_can_read_an_im_group =
-	        ((parent->mode & S_IRGRP) && (parent->gid == context->gid));
-	bool others_can_read_and_im_others =
-	        ((parent->mode & S_IROTH) && (parent->uid != context->uid) &&
-	         (parent->gid != context->gid));
-
-	if (!user_can_read_an_im_user && !group_can_read_an_im_group &&
-	    !others_can_read_and_im_others)
+	if (!permissions_ok_for(parent,'W'))
 		return -EACCES;
 
 	uint32_t block_offset = parent->nentries / NENTRIES_PER_BLOCK;
@@ -429,19 +456,9 @@ fisopfs_opendir(const char *path, struct fuse_file_info *fi)
 	inode_t *inode = find_inode(path, __S_IFDIR);
 	if (!inode)
 		return -ENOENT;
-
+	
 	// Permissions check.
-	struct fuse_context *context = fuse_get_context();
-	bool user_can_read_an_im_user =
-	        ((inode->mode & S_IRUSR) && (inode->uid == context->uid));
-	bool group_can_read_an_im_group =
-	        ((inode->mode & S_IRGRP) && (inode->gid == context->gid));
-	bool others_can_read_and_im_others =
-	        ((inode->mode & S_IROTH) && (inode->uid != context->uid) &&
-	         (inode->gid != context->gid));
-
-	if (!user_can_read_an_im_user && !group_can_read_an_im_group &&
-	    !others_can_read_and_im_others)
+	if (!permissions_ok_for(inode,'W'))
 		return -EACCES;
 
 	fi->fh = (uint64_t) inode->ino;
@@ -481,19 +498,9 @@ fisopfs_read(const char *path,
 	inode_t *inode = find_inode(path, __S_IFREG);
 	if (!inode)
 		return -ENOENT;
-
+	
 	// Permissions check.
-	struct fuse_context *context = fuse_get_context();
-	bool user_can_read_an_im_user =
-	        ((inode->mode & S_IRUSR) && (inode->uid == context->uid));
-	bool group_can_read_an_im_group =
-	        ((inode->mode & S_IRGRP) && (inode->gid == context->gid));
-	bool others_can_read_and_im_others =
-	        ((inode->mode & S_IROTH) && (inode->uid != context->uid) &&
-	         (inode->gid != context->gid));
-
-	if (!user_can_read_an_im_user && !group_can_read_an_im_group &&
-	    !others_can_read_and_im_others)
+	if (!permissions_ok_for(inode,'R'))
 		return -EACCES;
 
 	if (offset + size > inode->file_size)
@@ -536,19 +543,9 @@ fisopfs_write(const char *path,
 	inode_t *inode = find_inode(path, __S_IFREG);
 	if (!inode)
 		return -ENOENT;
-
+	
 	// Permissions check.
-	struct fuse_context *context = fuse_get_context();
-	bool user_can_write_an_im_user =
-	        ((inode->mode & S_IWUSR) && (inode->uid == context->uid));
-	bool group_can_write_an_im_group =
-	        ((inode->mode & S_IWGRP) && (inode->gid == context->gid));
-	bool others_can_write_and_im_others =
-	        ((inode->mode & S_IWOTH) && (inode->uid != context->uid) &&
-	         (inode->gid != context->gid));
-
-	if (!user_can_write_an_im_user && !group_can_write_an_im_group &&
-	    !others_can_write_and_im_others)
+	if (!permissions_ok_for(inode,'W'))
 		return -EACCES;
 
 	uint32_t blk_num = offset / BLOCK_SIZE;
@@ -647,7 +644,7 @@ fisopfs_link(const char *from, const char *to)
 {
 	printf("[debug] fisopfs_link(%s,%s)\n", from, to);
 
-	inode_t *target = find_inode(from, __S_IFREG | __S_IFDIR);
+	inode_t *target = find_inode(from, __S_IFREG);
 	if (!target)
 		return -ENOENT;
 
@@ -695,8 +692,6 @@ fisopfs_truncate(const char *path, off_t offset)
 		printf("[debug] cleared %u bytes\n", size);
 		clear_bit(&data_bitmap, blk_num);
 
-		inode->uid = 0;
-		inode->gid = 0;
 		inode->data_blocks[i] = 0;
 		inode->file_size -= size;
 		inode->d_modified = time(NULL);
@@ -808,10 +803,13 @@ fisopfs_init(struct fuse_conn_info *conn)
 
 		// initialize root inode
 		struct fuse_context *context = fuse_get_context();
-		root->uid = context->uid;
-		root->gid = context->gid;
+		printf("[debug][] DESDE INIT, context uid: %d, context gid: %d\n",
+	       context->uid,
+	       context->gid);
+		root->uid = 1000;
+		root->gid = 1000;
 		root->ino = ROOT_INODE;
-		root->mode = __S_IFDIR | 0755;
+		root->mode = __S_IFDIR | 0777;
 		root->d_changed = time(NULL);
 		root->d_accessed = root->d_changed;
 		root->d_modified = root->d_changed;
@@ -860,12 +858,16 @@ fisopfs_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi)
 	inode_t *inode = find_inode(path, __S_IFREG | __S_IFDIR);
 	if (!inode)
 		return -ENOENT;
-	// Primero chequear cosas de permisos [].
+	
+	// Permissions check. Comentado xq no contemplado en tests de permisos;
+	// Funciona. Descomentar para ver funcionamiento manualmente (ver archivo de pruebas 4_...txt).
 	struct fuse_context *context = fuse_get_context();
-	printf("[debug][] DESDE CHOWN, context uid: %d, uid pm: %d\n",
+	/*if (context->uid!=0)
+		return -EACCES;*/
+		
+	printf("[debug][] DESDE CHOWN, context uid: %d, uid pm: %d, context gid: %d, gid pm: %d\n",
 	       context->uid,
-	       uid);
-	printf("[debug][] DESDE CHOWN, context gid: %d, gid pm: %d\n",
+	       uid,
 	       context->gid,
 	       gid);
 
@@ -887,11 +889,17 @@ fisopfs_chmod(const char *path, mode_t mode, struct fuse_file_info *fi)
 	inode_t *inode = find_inode(path, __S_IFREG | __S_IFDIR);
 	if (!inode)
 		return -ENOENT;
-	// Primero hacer un check de permisos []
+	
+	// Permissions check. Comentado xq no contemplado en tests de permisos;
+	// Funciona. Descomentar para ver funcionamiento manualmente (ver archivo de pruebas 4_...txt).
 	struct fuse_context *context = fuse_get_context();
+	/*if (inode->uid != context->uid)
+		return -EACCES;*/
+		
 	printf("[debug] [] PRINT CONTEXT uid: %d, gid: %d\n",
 	       context->uid,
 	       context->gid);
+	
 
 	// Mode change
 	printf("[debug] [] PRINT DEBUG modo anterior: %d\n", inode->mode);

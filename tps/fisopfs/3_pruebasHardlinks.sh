@@ -34,7 +34,7 @@ fi
 ########
 ## Tests 3 y 4 _ Ambos tienen la misma cantidad de hardlinks: 2.
 nombreDelTest="test3 _ cant enlaces _ el original tiene 2 hardlinks"
-actual=$(stat h1.txt | grep Enlaces | cut -d ":" -f 4 2>&1)
+actual=$(stat h1.txt | grep Enlaces | cut -d ":" -f 4)
 expected=" 2"
 
 if [[ $expected = $actual ]]; then
@@ -45,7 +45,7 @@ fi
 
 ###
 nombreDelTest="test4 _ cant enlaces _ el link tiene 2 hardlinks"
-actual=$(stat h2.txt | grep Enlaces | cut -d ":" -f 4 2>&1)
+actual=$(stat h2.txt | grep Enlaces | cut -d ":" -f 4)
 expected=" 2"
 
 if [[ $expected = $actual ]]; then
@@ -82,6 +82,40 @@ nombreDelTest="test7 _ rm _ es posible borrar el último hardlink"
 
 actual=$(rm h2.txt 2>&1 | wc -l)
 expected="0"
+
+if [[ $expected = $actual ]]; then
+    echo "[OK] ${nombreDelTest}"
+else
+    echo "[ERROR] ${nombreDelTest} expected: ${expected} but got: ${actual}."
+fi
+
+###############
+
+nombreDelTest="test8 _ rm name _ rm hardlink borra el de nombre correcto"
+
+echo "123">h1.txt
+link h1.txt h2.txt
+rm h2.txt
+
+actual=$(cat h1.txt 2>&1)
+expected="123"
+
+if [[ $expected = $actual ]]; then
+    echo "[OK] ${nombreDelTest}"
+else
+    echo "[ERROR] ${nombreDelTest} expected: ${expected} but got: ${actual}."
+fi
+
+###############
+nombreDelTest="test9 _ truncate _ luego de sobreescritura sigue teniendo nlink 2."
+
+echo "123">h1.txt
+link h1.txt h2.txt
+
+echo "sobreescribo">h2.txt
+
+actual=$(stat h1.txt | grep Enlaces | cut -d ":" -f 4)
+expected=" 2"
 
 if [[ $expected = $actual ]]; then
     echo "[OK] ${nombreDelTest}"

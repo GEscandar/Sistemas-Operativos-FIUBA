@@ -1,0 +1,26 @@
+==============================================
+Funciona chown y chmod chequeando permisos antes, como en linux.
+Se ejecutó esto manualmente, en este orden, y se obtuvieron los resultados esperados.
+
+echo "123">arch
+ls -lai
+# vemos que arch es de user
+
+chown root:root arch
+# error, no permitido
+
+sudo su
+chown root:root arch
+ls -lai
+# arch es de root root.
+
+# Sigo siendo root, creo un archivo:
+echo "456">archDeRoot
+exit
+
+# Ahora soy user:
+chmod 777 archDeRoot
+# error, no permitido
+chown user:user archDeRoot # donde 'user' es el $whoami, que no es root.
+# error, no permitido
+================================================
